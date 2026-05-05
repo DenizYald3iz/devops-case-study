@@ -16,7 +16,7 @@ validate_dockerfile:
   stage: validate
   image: hadolint/hadolint:latest-debian
   script:
-    - hadolint Dockerfile
+    - hadolint 01-docker/Dockerfile
 
 # ── 2. BUILD (KANIKO) ─────────────────────────────────────────────────────────
 # DinD Privileged mod gerektirdiği için Kaniko tercih edildi (rootless build)
@@ -29,8 +29,8 @@ build_image_kaniko:
     - mkdir -p /kaniko/.docker
     - echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(printf "%s:%s" "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
     - /kaniko/executor
-      --context "${CI_PROJECT_DIR}"
-      --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
+      --context "${CI_PROJECT_DIR}/01-docker"
+      --dockerfile "${CI_PROJECT_DIR}/01-docker/Dockerfile"
       --destination "${IMAGE_NAME}:${IMAGE_TAG}"
       --cache=true
       --cache-repo="${CI_REGISTRY_IMAGE}/cache"
@@ -62,7 +62,7 @@ tag_latest_main:
     - crane tag ${IMAGE_NAME}:${IMAGE_TAG} latest
 
 # ── 5. DEPLOY ─────────────────────────────────────────────────────────────────
-# Continuous Delivery: production'a çıkış manuel onay gerektirir (human-in-the-loop)
+# Continuous Delivery: production'a çıkış manuel onay gerektirecektir
 deploy_production:
   stage: deploy
   image: bitnami/kubectl:latest

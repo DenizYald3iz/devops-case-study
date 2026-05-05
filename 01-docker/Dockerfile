@@ -21,7 +21,7 @@ LABEL maintainer="DevOps Engineer Candidate: Deniz YALDIZ <denizyaldiz2003@gmail
       org.opencontainers.image.source="https://github.com/DenizYald3iz/devops-case-study" \
       org.opencontainers.image.description="A simple Streamlit app for DevOps case study" 
 
-RUN groupadd -r appuser && useradd -r -g appuser -m appuser
+RUN groupadd -r -g 999 appuser && useradd -r -u 999 -g appuser -m appuser
 
 WORKDIR /app
 # builder'dan paketleri al

@@ -27,9 +27,5 @@ scrape_configs:
       - targets: ["node-exporter:9100"]
     # Host seviyesi metrikler: node_cpu_seconds_total, node_memory_MemAvailable_bytes vb.
 
-  - job_name: streamlit-app
-    static_configs:
-      - targets: ["host.docker.internal:8501"]
-    metrics_path: /_stcore/metrics
-    # Streamlit built-in Prometheus endpoint (v1.25+)
-    # Erişilemezse bu job hata verir ama diğerleri çalışmaya devam eder
+  # Streamlit'in built-in Prometheus endpoint'i yok.
+  # Container CPU/memory metrikleri cAdvisor üzerinden name="streamlit-app" label'ı ile geliyor.

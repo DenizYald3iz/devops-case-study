@@ -24,7 +24,7 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
-        runAsUser: 999    # appuser sistem UID (useradd -r ile otomatik atandı)
+        runAsUser: 999    # Dockerfile'da -u 999 ile sabitlendi
         fsGroup: 999
       containers:
         - name: streamlit

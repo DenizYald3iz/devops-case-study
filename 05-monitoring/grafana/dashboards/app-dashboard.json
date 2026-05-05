@@ -108,13 +108,13 @@
     },
     {
       "id": 5,
-      "title": "Container Restart Count",
+      "title": "Container Last Start",
       "type": "stat",
       "gridPos": { "h": 6, "w": 6, "x": 12, "y": 8 },
       "targets": [
         {
           "datasource": "Prometheus",
-          "expr": "container_start_time_seconds{name=\"streamlit-app\"}",
+          "expr": "container_start_time_seconds{name=\"streamlit-app\"} * 1000",
           "legendFormat": "Last Start"
         }
       ],

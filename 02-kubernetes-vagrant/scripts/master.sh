@@ -5,7 +5,12 @@ MASTER_IP="192.168.56.10"
 TOKEN="abcdef.1234567890abcdef"
 
 # ── 1. KUBEADM INIT ───────────────────────────────────────────────────────────
-kubeadm init --config /vagrant/kubeadm-config.yaml
+# Cluster zaten kuruluysa init'i atla (provision idempotency)
+if [ ! -f /etc/kubernetes/admin.conf ]; then
+  kubeadm init --config /vagrant/kubeadm-config.yaml
+else
+  echo "kubeadm already initialized, skipping init."
+fi
 
 # ── 2. KUBECONFIG ─────────────────────────────────────────────────────────────
 mkdir -p /home/vagrant/.kube
@@ -17,12 +22,13 @@ export KUBECONFIG=/etc/kubernetes/admin.conf
 # ── 3. NODEPORT RANGE GENİŞLET (80 portuna izin ver) ─────────────────────────
 # Varsayılan: 30000-32767. Case port 80 istediği için range genişletildi.
 # Production'da tercih edilmez (ingress.yaml production alternatifidir).
-sed -i '/--service-cluster-ip-range/i\    - --service-node-port-range=80-32767' \
-  /etc/kubernetes/manifests/kube-apiserver.yaml
+if ! grep -q 'service-node-port-range' /etc/kubernetes/manifests/kube-apiserver.yaml; then
+  sed -i '/--service-cluster-ip-range/i\    - --service-node-port-range=80-32767' \
+    /etc/kubernetes/manifests/kube-apiserver.yaml
+  echo "Waiting for API server to restart with new NodePort range..."
+  sleep 10
+fi
 
-# Static pod manifest değişince kube-apiserver otomatik restart eder
-echo "Waiting for API server to restart with new NodePort range..."
-sleep 10
 until kubectl get nodes &>/dev/null; do sleep 3; done
 echo "API server ready."
 

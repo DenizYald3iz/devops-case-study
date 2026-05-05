@@ -5,3 +5,8 @@
 # - kubeconfig / *.kubeconfig
 # - __pycache__, node_modules, .DS_Store
 # - Build artifact dizinleri (dist/, build/)
+.log
+id="o1ybx9"
+kubeconfig
+*.kubeconfig
+config

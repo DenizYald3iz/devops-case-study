@@ -5,7 +5,7 @@
 # - EXPOSE ile uygulama portunu belirt
 # - HEALTHCHECK talimatı ekle
 # - CMD ile uygulamayı başlat
-# Template 3.8 kullanıyordu fakat EOL olduğu için 3.12'ye yükselttim
+# Template 3.8 kullanıyordu fakat EOL olduğu için 3.12'ye yükseltmeyi dusunuyorum (yapildi)
 
 FROM python:3.12-slim AS builder 
 WORKDIR /app
@@ -17,8 +17,9 @@ FROM python:3.12-slim
 #LABEL`lar opsiyonel ama uygulama hakkında bilgi vermek için kullanışlı olabilir
 LABEL maintainer="DevOps Engineer Candidate: Deniz YALDIZ <denizyaldiz2003@gmail.com>" \
       org.opencontainers.image.title="streamlit-case-app" \
-      org.opencontainers.image.version="1.0.0"
-# org.opencontainers.image.source="https://github.com/..." eklenebilir
+      org.opencontainers.image.version="1.0.0" \
+      org.opencontainers.image.source="https://github.com/DenizYald3iz/devops-case-study" \
+      org.opencontainers.image.description="A simple Streamlit app for DevOps case study" 
 
 RUN groupadd -r appuser && useradd -r -g appuser -m appuser
 
@@ -33,9 +34,6 @@ USER appuser
 # Dosyaları kopyalarken sahipliğini appuser'a verdim cunku permission roota kalabilir
 COPY --chown=appuser:appuser . /app
 
-EXPOSE 8501
+EXPOSE ${STREAMLIT_SERVER_PORT:-8501}
 
-CMD ["streamlit", "run", "main.py", \
-     "--server.address=0.0.0.0", \
-     "--server.headless=true", \
-     "--browser.gatherUsageStats=false"]
+ENTRYPOINT ["/bin/sh", "/app/entrypoint.sh"]

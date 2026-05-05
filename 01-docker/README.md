@@ -23,6 +23,7 @@ Uygulama `http://localhost:8501` adresinde çalışır.
 | `Dockerfile` | Multi-stage build, Python 3.12, non-root user |
 | `docker-compose.yml` | Servis tanımı, healthcheck, ağ yapılandırması |
 | `.env.example` | Ortam değişkenleri şablonu |
+| `entrypoint.sh` | Container başlatma script'i - Streamlit konfigürasyonu ve başlatılması |
 | `main.py` | Streamlit uygulama kodu |
 | `requirements.txt` | Python bağımlılıkları |
 | `.dockerignore` | Build context'ten dışlanan dosyalar |
@@ -33,6 +34,34 @@ Uygulama `http://localhost:8501` adresinde çalışır.
 |---|---|---|
 | `APP_VERSION` | `1.0.0` | Image tag'inde kullanılır |
 | `STREAMLIT_SERVER_PORT` | `8501` | Streamlit'in dinleyeceği port |
+
+## Entrypoint Script (`entrypoint.sh`)
+
+Container başlatıldığında Dockerfile'daki `ENTRYPOINT` talimatı bu script'i çalıştırır.
+
+**Neden kullanıyoruz?**
+
+1. **Ortam değişkeni yönetimi** - `$STREAMLIT_SERVER_PORT` dinamik olarak okunur (hardcode yerine)
+2. **Başlangıç mesajı** - Kullanıcıya uygulamanın URL'sini gösterir
+3. **Streamlit konfigürasyonu** - İzole ve headless modda çalıştırılması sağlanır:
+   - `--server.address=0.0.0.0` - Tüm interface'leri dinle (container dışından erişim için)
+   - `--server.headless=true` - Browser otomatik açma (server ortamda)
+   - `--browser.gatherUsageStats=false` - Telemetri devre dışı
+4. **Process replacement** - `exec` komutu ile shell başka process başlatmıyor (PID 1'i yönet)
+
+**Script içeriği:**
+```bash
+#!/bin/sh
+PORT="${STREAMLIT_SERVER_PORT:-8501}"           # Port'u oku veya default 8501 kullan
+echo ""
+echo "  App running at: http://localhost:${PORT}"  # Kullanıcıya bilgi ver
+echo ""
+exec streamlit run main.py \                      # main.py'ı Streamlit ile çalıştır
+  --server.port="${PORT}" \                       # Dinamik port
+  --server.address=0.0.0.0 \                      # Harici erişim
+  --server.headless=true \                        # GUI olmadan
+  --browser.gatherUsageStats=false                # Veri toplama kapalı
+```
 
 ## Test Komutları
 

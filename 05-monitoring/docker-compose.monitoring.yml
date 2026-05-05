@@ -1,4 +1,4 @@
-iservices:
+services:
 
   # ── Prometheus — metrik toplama ──────────────────────────────────────────────
   prometheus:

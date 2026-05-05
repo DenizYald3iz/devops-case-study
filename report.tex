@@ -1,0 +1,591 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[turkish]{babel}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{graphicx}
+\usepackage{microtype}
+\usepackage{parskip}
+
+\geometry{
+  top=2.5cm, bottom=2.5cm,
+  left=2.8cm, right=2.8cm
+}
+
+% Kod bloğu stili
+\definecolor{codebg}{HTML}{F5F5F5}
+\definecolor{codeborder}{HTML}{CCCCCC}
+\definecolor{keyword}{HTML}{0000FF}
+\definecolor{comment}{HTML}{6A9955}
+\definecolor{string}{HTML}{A31515}
+
+\lstset{
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{codeborder},
+  keywordstyle=\color{keyword},
+  commentstyle=\color{comment},
+  stringstyle=\color{string},
+  showstringspaces=false,
+  xleftmargin=4pt,
+  xrightmargin=4pt,
+}
+
+% Başlık formatı
+\titleformat{\section}{\large\bfseries}{}{0em}{\thesection\quad}[\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries}{}{0em}{\thesubsection\quad}
+
+% Header / footer
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\small DevOps Case Study — Teknik Rapor}
+\lhead{\small Deniz YALDIZ}
+\cfoot{\thepage}
+
+% Hyperlink renkleri
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=blue,
+}
+
+% ─────────────────────────────────────────────────────────────
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  \vspace*{2cm}
+  {\Huge\bfseries DevOps Case Study\par}
+  \vspace{0.5cm}
+  {\Large Teknik Uygulama Raporu\par}
+  \vspace{2cm}
+  {\large\bfseries Deniz YALDIZ\par}
+  \vspace{0.3cm}
+  {\normalsize Mayıs 2026\par}
+  \vspace{3cm}
+  \begin{tabular}{ll}
+    \textbf{Platform}   & Linux (Ubuntu 22.04) \\
+    \textbf{K8s}        & v1.29.15 \\
+    \textbf{Araçlar}    & Docker, Vagrant, GitLab CI, Prometheus, Grafana \\
+    \textbf{Repo}       & \texttt{github.com/DenizYald3iz/devops-case-study} \\
+  \end{tabular}
+  \vfill
+  {\small Bu rapor her sorudaki teknik kararların gerekçesini,
+  değerlendirilen alternatifleri ve trade-off analizini içermektedir.}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ─────────────────────────────────────────────────────────────
+\section{Genel Mimari}
+
+Proje beş bağımsız bileşenden oluşmaktadır. Her bileşen kendi
+klasöründe izole edilmiş ve bağımsız olarak çalıştırılabilecek
+şekilde tasarlanmıştır.
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Bileşen} & \textbf{Teknoloji} & \textbf{Çalışma Ortamı} \\
+\midrule
+Uygulama container'ı & Docker + Streamlit 1.32 & Docker Compose \\
+K8s cluster           & Vagrant + VirtualBox     & 3 VM (1 master, 2 worker) \\
+K8s deployment        & kubectl manifests        & case-study namespace \\
+CI/CD pipeline        & GitLab CI                & GitLab Runner \\
+Monitoring            & Prometheus + Grafana     & Docker Compose \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Genel trafik akışı:
+
+\begin{lstlisting}
+git push (main)
+    │
+    ▼
+GitLab CI  →  Kaniko build  →  Trivy scan  →  Registry push
+                                                     │
+                                              kubectl set image
+                                                     │
+                                                     ▼
+Kullanıcı :80  →  NodePort  →  Service:8080  →  Pod:8501 (Streamlit)
+                                                     │
+                                              cAdvisor / node-exporter
+                                                     │
+                                              Prometheus  →  Grafana
+\end{lstlisting}
+
+% ─────────────────────────────────────────────────────────────
+\section{Soru 1 — Containerization}
+
+\subsection{Python Versiyon Seçimi}
+
+Şablon dosyasında \texttt{python:3.8-slim} kullanılıyordu. Python 3.8,
+Ekim 2024 itibarıyla End-of-Life olmuştur; güvenlik yamaları artık
+yayınlanmamaktadır. Bu nedenle \texttt{python:3.12-slim}'e geçildi.
+Tercih raporda açıkça belirtilmiştir.
+
+\subsection{Multi-Stage Build}
+
+\begin{lstlisting}[language=docker,caption={Multi-stage build yapısı}]
+FROM python:3.12-slim AS builder
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt
+
+FROM python:3.12-slim
+# Yalnizca bağimliliklar kopyalanir, pip ve build araclari gelmez
+COPY --from=builder /root/.local /home/appuser/.local
+\end{lstlisting}
+
+Build araçları ve pip final image'a taşınmadığı için image boyutu
+anlamlı ölçüde küçülmektedir.
+
+\subsection{Non-Root Kullanıcı ve UID Sabitleme}
+
+Güvenlik temeli olarak container root yerine \texttt{appuser} ile
+çalışmaktadır. Kritik bir detay: \texttt{useradd -r} ile otomatik
+atanan UID, base image'daki mevcut sistem kullanıcılarına bağlı
+olarak değişebilir. Kubernetes deployment YAML'ında
+\texttt{runAsUser: 999} yazıldığı için bu değerin container ile
+örtüşmesi zorunludur. Bu nedenle UID ve GID açıkça sabitlendi:
+
+\begin{lstlisting}[language=bash]
+RUN groupadd -r -g 999 appuser && \
+    useradd -r -u 999 -g appuser -m appuser
+\end{lstlisting}
+
+\subsection{ENTRYPOINT ve Başlangıç Logu}
+
+\texttt{CMD} yerine ayrı bir \texttt{entrypoint.sh} kullanılmaktadır.
+Bu tercih iki avantaj sağlar:
+
+\begin{enumerate}[leftmargin=*]
+  \item Konteyner başladığında hangi portta çalıştığını log'a yazdırır.
+  \item \texttt{STREAMLIT\_SERVER\_PORT} environment variable'ını
+        \texttt{-{}-server.port} parametresine iletir; port konfigürasyonu
+        tek noktadan yönetilir.
+\end{enumerate}
+
+\subsection{Port Konfigürasyonu (.env Entegrasyonu)}
+
+Başlangıçta \texttt{docker-compose.yml} içinde port değerleri
+hardcoded yazılıyordu (\texttt{"8501:8501"}). Bu durum
+\texttt{.env} dosyasındaki \texttt{STREAMLIT\_SERVER\_PORT}
+değerini değiştirmenin etkisiz kalmasına yol açıyordu.
+Düzeltme ile birlikte:
+
+\begin{lstlisting}[language=yaml]
+ports:
+  - "${STREAMLIT_SERVER_PORT:-8501}:${STREAMLIT_SERVER_PORT:-8501}"
+environment:
+  - STREAMLIT_SERVER_PORT=${STREAMLIT_SERVER_PORT:-8501}
+\end{lstlisting}
+
+\subsection{Healthcheck}
+
+Dockerfile'da \texttt{HEALTHCHECK} ve Compose'da \texttt{healthcheck}
+bloğu tanımlıdır. Her ikisi de Streamlit'in built-in
+\texttt{/\_stcore/health} endpoint'ini kullanmaktadır.
+
+% ─────────────────────────────────────────────────────────────
+\section{Soru 2 — Kubernetes Cluster (Vagrant)}
+
+\subsection{Donanım ve Distro Seçimi}
+
+\begin{center}
+\begin{tabular}{llll}
+\toprule
+\textbf{Node} & \textbf{IP} & \textbf{CPU} & \textbf{RAM} \\
+\midrule
+k8s-master   & 192.168.56.10 & 2 vCPU & 2 GB \\
+k8s-worker-1 & 192.168.56.11 & 2 vCPU & 2 GB \\
+k8s-worker-2 & 192.168.56.12 & 2 vCPU & 2 GB \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Ubuntu 22.04 LTS (\texttt{ubuntu/jammy64}) tercih edilmiştir.
+kubeadm referans dokümantasyonunda en geniş test edilen dağıtımdır.
+Toplam kaynak ihtiyacı yaklaşık 6 GB RAM ve 6 vCPU'dur.
+
+\subsection{Container Runtime: containerd}
+
+Docker değil, containerd kullanılmaktadır. Kubernetes 1.24 sürümüyle
+birlikte dockershim kaldırılmıştır; containerd doğrudan CRI uyumludur.
+\texttt{SystemdCgroup = true} ayarı zorunludur — aksi takdirde kubelet
+ve containerd farklı cgroup driver'ı kullandığında kaynak yönetimi
+çakışmalarına yol açar.
+
+\subsection{CNI: Calico}
+
+Flannel ile karşılaştırıldığında Calico'nun tercih edilme gerekçesi
+\texttt{NetworkPolicy} desteğidir. Pod-to-pod trafik kısıtlaması
+üretim ortamlarında standart bir gereklilik olduğundan,
+NetworkPolicy desteği olmayan Flannel elendi.
+
+\subsection{Karşılaşılan Sorunlar ve Çözümler}
+
+\textbf{GPG /dev/tty hatası:}
+\texttt{gpg -{}-dearmor} komutu, Vagrant'ın non-interactive SSH
+ortamında \texttt{/dev/tty} açmaya çalışmaktadır. Provision
+bağlantısında bu cihaz mevcut olmadığından \texttt{curl: (23) Failed
+writing body} hatası zincirleme olarak tetiklenmektedir. Çözüm olarak
+\texttt{-{}-batch -{}-yes -{}-no-tty} parametreleri eklendi.
+
+\textbf{vagrant provision idempotency:}
+\texttt{kubeadm init}, ikinci çalıştırmada portların ve manifest
+dosyalarının mevcut olduğunu görüp hata vermektedir. Çözüm olarak
+\texttt{/etc/kubernetes/admin.conf} varlığı kontrol edilerek init adımı
+koşullu hale getirildi. Worker'larda aynı şekilde
+\texttt{/etc/kubernetes/kubelet.conf} kontrolü eklendi.
+
+\subsection{Sabit Token ile Join (Idempotency)}
+
+\texttt{kubeadm-config.yaml} içinde önceden tanımlı token kullanılmaktadır.
+Bu sayede \texttt{master.sh} tamamlandıktan sonra join komutu öngörülebilir
+formatta \texttt{/vagrant/join.sh}'a yazılabilmekte, worker'lar bu
+dosyayı bekleyerek cluster'a katılmaktadır.
+
+% ─────────────────────────────────────────────────────────────
+\section{Soru 3 — Kubernetes Deployment}
+
+\subsection{Port 80 Problemi ve Çözüm Alternatifleri}
+
+NodePort'un varsayılan aralığı 30000--32767'dir; 80 numaralı port bu
+aralığın dışındadır. Üç çözüm değerlendirilmiştir:
+
+\begin{center}
+\begin{tabularx}{\textwidth}{lXll}
+\toprule
+\textbf{Yöntem} & \textbf{Açıklama} & \textbf{vagrant up sonrası ek adım} & \textbf{Üretim uygunluğu} \\
+\midrule
+A — apiserver range & \texttt{-{}-service-node-port-range=80-32767} & Yok & Düşük \\
+B — Ingress Controller & NGINX, host/path bazlı routing & Var (controller kurulumu) & Yüksek \\
+C — iptables NAT & Host'ta 80$\to$30080 yönlendirme & Var, kalıcı değil & Düşük \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\textbf{Seçilen yöntem: A.}
+Demo ortamı için temel kriter şuydu: \texttt{vagrant up} tamamlandıktan
+sonra ek adım olmaksızın \texttt{curl http://192.168.56.10/} çalışsın.
+Yöntem A bu kriteri karşılamaktadır.
+
+\textbf{Trade-off:} Bu ayar cluster genelinde geçerlidir. Başka bir
+servis port 80'i yanlışlıkla alabilir. Tek kiracı, kontrollü bir demo
+ortamında kabul edilebilir; çok ekipli üretim ortamında kullanılmaz.
+
+\texttt{ingress.yaml} dosyası hazır olarak repoya eklenmiştir. Üretim
+ortamına geçişte yalnızca NGINX Ingress Controller kurulumu yeterlidir.
+
+\subsection{Deployment Kararları}
+
+\textbf{Rolling update stratejisi:}
+\texttt{maxUnavailable: 0} ve \texttt{maxSurge: 1} kombinasyonuyla
+rolling update sırasında her zaman 2 replica ayakta kalmaktadır.
+
+\textbf{Probe stratejisi:}
+\texttt{liveness} probe 30 saniye gecikmeyle başlamaktadır. Streamlit'in
+tam açılması bu süreyi alabilmektedir; erken probe container'ı gereksiz
+yere yeniden başlatır.
+
+\textbf{readOnlyRootFilesystem: false:}
+Streamlit \texttt{/tmp} altına geçici dosyalar yazmaktadır. Bu değer
+\texttt{true} yapıldığında uygulama başlatılamamaktadır. Tüm
+yetenekler \texttt{capabilities: drop: ["ALL"]} ile kaldırılarak
+telafi edilmiştir.
+
+\textbf{UID hizalaması:}
+Deployment YAML'ında \texttt{runAsUser: 999} yazılmaktadır. Dockerfile'da
+UID ve GID açıkça 999 olarak sabitlenmiştir; böylece Kubernetes güvenlik
+bağlamı ile container kullanıcısı örtüşmektedir.
+
+% ─────────────────────────────────────────────────────────────
+\section{Soru 4 — GitLab CI/CD Pipeline}
+
+\subsection{Pipeline Yapısı}
+
+6 stage'den oluşan bir pipeline tasarlanmıştır:
+
+\begin{lstlisting}
+validate -> build -> scan -> push -> deploy -> rollback
+\end{lstlisting}
+
+\begin{center}
+\begin{tabularx}{\textwidth}{llX}
+\toprule
+\textbf{Stage} & \textbf{Job} & \textbf{Açıklama} \\
+\midrule
+validate  & validate\_dockerfile  & Hadolint ile Dockerfile lint \\
+build     & build\_image\_kaniko  & Kaniko ile rootless image build + SHA tag push \\
+scan      & security\_scan        & Trivy HIGH/CRITICAL zafiyet taraması \\
+push      & tag\_latest\_main     & SHA $\to$ latest tag (yalnızca main branch) \\
+deploy    & deploy\_production    & kubectl rolling update — \textbf{manuel onay} \\
+rollback  & rollback\_production  & kubectl rollout undo — \textbf{manuel, acil durum} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Kaniko (DinD Yerine)}
+
+Docker-in-Docker, runner'ın \texttt{privileged: true} modunda
+çalışmasını zorunlu kılar; bu durum host kernel'e tam erişim anlamına
+gelir. Kaniko aynı işi userspace'de gerçekleştirmekte, root yetkisi
+veya özel socket erişimi gerektirmemektedir.
+
+\subsection{Shift-Left Security: Trivy}
+
+Güvenlik açığı bulunan bir image asla \texttt{latest} tag almaz ve
+üretime gidemez. Pipeline sırası bunu zorunlu kılar:
+\texttt{build $\to$ scan $\to$ push(latest) $\to$ deploy.}
+
+\texttt{HIGH} veya \texttt{CRITICAL} zafiyet tespit edildiğinde
+\texttt{-{}-exit-code 1} ile pipeline durdurulmaktadır.
+
+\subsection{Continuous Delivery (Otomatik Deploy Değil)}
+
+Deploy aşaması manuel onay gerektirmektedir. Üretim ortamına çıkış
+her zaman bir insanın onayına bağlı kalmalıdır. Rollback stage,
+terminal açmadan GitLab arayüzü üzerinden tek tıkla
+\texttt{kubectl rollout undo} çalıştırma imkânı sağlamaktadır.
+
+\subsection{Secret Yönetimi}
+
+\texttt{KUBECONFIG\_PROD} değişkeni GitLab'da Masked ve Protected
+olarak saklanmaktadır. Pipeline içinde geçici dosyaya decode
+edilmekte, job tamamlandığında silinmektedir; log'a yazdırılmamaktadır.
+
+\subsection{Düzeltilen Bug: Dockerfile Yolu}
+
+İlk versiyonda \texttt{-{}-context \$\{CI\_PROJECT\_DIR\}} ve
+\texttt{-{}-dockerfile \$\{CI\_PROJECT\_DIR\}/Dockerfile} yazılıydı.
+Dockerfile proje kökünde değil \texttt{01-docker/} altında
+bulunduğundan pipeline build aşamasında hata veriyordu.
+Doğru yollar: \texttt{01-docker/} context ve
+\texttt{01-docker/Dockerfile}.
+
+% ─────────────────────────────────────────────────────────────
+\section{Soru 5 — Monitoring}
+
+\subsection{Araç Seçimi: Prometheus + Grafana}
+
+Üç alternatif değerlendirilmiştir:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Custom shell script:} Sürdürülebilir değil, ekip
+        tarafından kolayca genişletilemiyor, alert mekanizması yok.
+  \item \textbf{Zabbix:} Ek kurulum karmaşıklığı yüksek; case'in
+        odağı değil.
+  \item \textbf{Prometheus + Grafana:} Endüstri standardı, container
+        ve host metrikleri için olgun ekosistem, provisioning ile
+        sıfır manuel kurulum.
+\end{itemize}
+
+\subsection{Bileşenler}
+
+\begin{center}
+\begin{tabular}{llll}
+\toprule
+\textbf{Araç} & \textbf{Versiyon} & \textbf{Görev} & \textbf{Port} \\
+\midrule
+Prometheus     & 2.51.0 & Metrik toplama, TSDB, alert değerlendirme & 9090 \\
+Grafana        & 10.4.0 & Görselleştirme, provisioning              & 3000 \\
+cAdvisor       & 0.49.1 & Container CPU/memory metrikleri           & 8080 \\
+node-exporter  & 1.7.0  & Host CPU/memory/disk metrikleri           & 9100 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Dashboard}
+
+"Streamlit App — CPU \& Memory" başlıklı dashboard altı panel
+içermektedir: Container CPU \%, Container Memory (kullanım + limit),
+Host CPU gauge, Host Memory Available gauge, Container Last Start
+zamanı, Host Disk kullanımı.
+
+Dashboard JSON, \texttt{grafana/dashboards/} altında saklanmakta
+ve Grafana başladığında provisioning sistemi tarafından otomatik
+yüklenmektedir. Manuel import gerekmemektedir.
+
+\subsection{Alert Kuralları}
+
+\begin{center}
+\begin{tabular}{llll}
+\toprule
+\textbf{Alert} & \textbf{Eşik} & \textbf{Süre} & \textbf{Seviye} \\
+\midrule
+ContainerHighCPU    & $>80\%$         & 2 dakika & warning  \\
+ContainerHighMemory & limit'in $>80\%$& 2 dakika & warning  \\
+ContainerDown       & görünmüyor      & 1 dakika & critical \\
+HostHighCPU         & $>85\%$         & 5 dakika & warning  \\
+HostLowMemory       & $<15\%$ available & 5 dakika & critical \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Karşılaşılan Sorunlar ve Çözümler}
+
+\textbf{host.docker.internal (Linux):}
+Docker Desktop'ın (Mac/Windows) otomatik çözdüğü bu hostname, Linux'ta
+varsayılan olarak kayıtlı değildir. Prometheus servisine
+\texttt{extra\_hosts: ["host.docker.internal:host-gateway"]} eklenerek
+çözüldü.
+
+\textbf{Sahte Streamlit metrics endpoint'i:}
+\texttt{/\_stcore/metrics} Streamlit'te bulunmamaktadır; bu job her
+scrape işleminde 404 alıyordu. Job kaldırıldı. Container metrikleri
+cAdvisor üzerinden \texttt{name="streamlit-app"} label'ı ile
+sorgulanmaktadır.
+
+\textbf{1970 tarihi (Container Last Start paneli):}
+\texttt{container\_start\_time\_seconds} saniye cinsinden döner;
+Grafana'nın \texttt{dateTimeAsIso} birimi milisaniye bekler.
+\texttt{* 1000} çarpımıyla düzeltildi.
+
+% ─────────────────────────────────────────────────────────────
+\section{Üretim Ortamına Geçişte Ek Adımlar}
+
+Case kapsamı dışında kalan ancak üretim ortamında gerekli olacak
+bileşenler:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Secret yönetimi:} HashiCorp Vault veya Sealed Secrets.
+        \texttt{KUBECONFIG} gibi değerler GitLab variable yerine
+        merkezi secret store'dan alınmalıdır.
+  \item \textbf{Log aggregation:} Loki + Promtail. Prometheus metrik,
+        Loki log; her ikisi Grafana'da tek panelde gösterilebilir.
+  \item \textbf{Helm chart:} Deployment manifest'leri Helm chart'a
+        taşınarak ortam bazlı \texttt{values.yaml} ile parametrize
+        edilebilir.
+  \item \textbf{HorizontalPodAutoscaler:} CPU/memory eşiğine göre
+        replica sayısını otomatik artırır.
+  \item \textbf{Pod Disruption Budget:} Node bakımı sırasında minimum
+        replica garantisi.
+  \item \textbf{Network Policy:} Calico kullanıldığından ek altyapı
+        gerektirmeksizin pod-to-pod trafik kısıtlaması uygulanabilir.
+  \item \textbf{Alertmanager:} Şu an kurallar tanımlı ancak
+        Alertmanager servisine yönlendirilmiyor. Slack/PagerDuty
+        entegrasyonu için gerekli.
+  \item \textbf{TLS:} Ingress üzerinde cert-manager + Let's Encrypt
+        ile otomatik sertifika yönetimi.
+\end{itemize}
+
+% ─────────────────────────────────────────────────────────────
+\section{Test Sonuçları}
+
+\subsection{Soru 1}
+\begin{lstlisting}
+$ docker compose up -d --build
+$ curl -o /dev/null -w "%{http_code}" http://localhost:8501/_stcore/health
+200
+\end{lstlisting}
+
+\subsection{Soru 2}
+\begin{lstlisting}
+$ vagrant up
+$ vagrant ssh k8s-master -c "kubectl get nodes"
+NAME           STATUS   ROLES           AGE   VERSION
+k8s-master     Ready    control-plane   17m   v1.29.15
+k8s-worker-1   Ready    <none>          16m   v1.29.15
+k8s-worker-2   Ready    <none>          14m   v1.29.15
+\end{lstlisting}
+
+\subsection{Soru 3}
+\begin{lstlisting}
+$ kubectl get deployment streamlit-app -n case-study
+NAME            READY   UP-TO-DATE   AVAILABLE   AGE
+streamlit-app   2/2     2            2           2m
+
+$ kubectl get service streamlit-app -n case-study
+NAME            TYPE       CLUSTER-IP     PORT(S)       AGE
+streamlit-app   NodePort   10.107.88.91   8080:80/TCP   2m
+
+$ curl -o /dev/null -w "%{http_code}" http://192.168.56.10/_stcore/health
+200
+$ curl -o /dev/null -w "%{http_code}" http://192.168.56.11/_stcore/health
+200
+$ curl -o /dev/null -w "%{http_code}" http://192.168.56.12/_stcore/health
+200
+
+# Güvenlik doğrulama
+$ kubectl exec -n case-study <pod> -- id
+uid=999(appuser) gid=999(appuser) groups=999(appuser)
+\end{lstlisting}
+
+\subsection{Soru 5}
+\begin{lstlisting}
+# Prometheus targets
+Job: cadvisor        State: up
+Job: node-exporter   State: up
+Job: prometheus      State: up
+
+# Uygulama metrikleri
+streamlit-app memory : 70.7 MB
+streamlit-app CPU    : 0.000% (idle)
+Host CPU usage       : 16.0%
+Host memory available: 12.5%
+Host disk usage      : 77.3%
+
+# Alert durumu
+ContainerHighCPU    : inactive
+ContainerHighMemory : inactive
+ContainerDown       : inactive
+HostHighCPU         : inactive
+HostLowMemory       : pending  (12.5% < 15% eşiği)
+\end{lstlisting}
+
+% ─────────────────────────────────────────────────────────────
+\section{Karşılaşılan Zorluklar}
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{GPG provision hatası (Soru 2):} Vagrant SSH
+        bağlantısının non-interactive olduğu göz önüne alınmadan
+        yazılmış GPG komutu \texttt{/dev/tty} açmaya çalışıyordu.
+        Hata mesajı doğrudan GPG'ye değil, zincirleme olarak curl'e
+        işaret ettiğinden root cause bulmak zaman aldı.
+
+  \item \textbf{Idempotency sorunu (Soru 2):} \texttt{vagrant provision}
+        çalıştırıldığında kubeadm'ın halihazırda kurulu cluster'ı
+        görüp hata vermesi beklenmedik bir davranıştı. Çözüm
+        \texttt{admin.conf} varlık kontrolüyle sağlandı.
+
+  \item \textbf{Dockerfile yolu (Soru 4):} CI pipeline'ındaki
+        \texttt{-{}-context} ve \texttt{-{}-dockerfile} yolları proje
+        kökünü gösteriyordu; Dockerfile \texttt{01-docker/} altında
+        olduğundan build aşaması başarısız oluyordu. Çalıştırılıp
+        hata görülmeden fark edilmesi zor bir bug.
+
+  \item \textbf{host.docker.internal (Soru 5):} Docker Desktop'ta
+        çalışan örnekler baz alınarak yazılmış Prometheus konfigürasyonu
+        Linux'ta doğrudan çalışmadı. \texttt{extra\_hosts:
+        host-gateway} çözümü Linux-spesifik bir detay.
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────
+\section{Sonuç}
+
+Beş sorunun tamamı çalışır halde teslim edilmektedir. Her kararın
+ardında bir gerekçe ve değerlendirilen alternatifler mevcuttur.
+Demo ortamında bazı trade-off'lar kasıtlı olarak kolaylık yönünde
+yapıldı (NodePort range genişletme gibi); bunların üretim ortamında
+neden farklı yapılması gerektiği ilgili README dosyalarında açıklandı.
+
+Çözümlerin tamamı tekrarlanabilir şekilde tasarlandı: \texttt{vagrant up}
+tek komutla üç node'lu cluster'ı ayağa kaldırmakta,
+\texttt{docker compose up} monitoring stack'ini başlatmakta,
+\texttt{kubectl apply} deployment'ı oluşturmaktadır.
+
+\end{document}

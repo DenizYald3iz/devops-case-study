@@ -1,0 +1,7 @@
+# .gitignore
+# - .env dosyaları (hassas değişkenler)
+# - *.log dosyaları
+# - Vagrant .vagrant/ dizini
+# - kubeconfig / *.kubeconfig
+# - __pycache__, node_modules, .DS_Store
+# - Build artifact dizinleri (dist/, build/)

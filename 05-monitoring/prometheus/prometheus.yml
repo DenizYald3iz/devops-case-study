@@ -1,0 +1,35 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+rule_files:
+  - alerts.yml
+
+scrape_configs:
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
+    # cAdvisor container CPU/memory metriklerini expose eder
+    # container_cpu_usage_seconds_total, container_memory_usage_bytes vb.
+
+  - job_name: node-exporter
+    static_configs:
+      - targets: ["node-exporter:9100"]
+    # Host seviyesi metrikler: node_cpu_seconds_total, node_memory_MemAvailable_bytes vb.
+
+  - job_name: streamlit-app
+    static_configs:
+      - targets: ["host.docker.internal:8501"]
+    metrics_path: /_stcore/metrics
+    # Streamlit built-in Prometheus endpoint (v1.25+)
+    # Erişilemezse bu job hata verir ama diğerleri çalışmaya devam eder

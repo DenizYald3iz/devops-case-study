@@ -1,0 +1,12 @@
+Log created: 2026-05-03T21:23:16.451426000Z
+Process ID:  399668 (0x61934)
+Parent PID:  2360 (0x938)
+Executable:  /usr/lib/virtualbox/VBoxHeadless
+Arg[0]: /usr/lib/virtualbox/VBoxHeadless
+Arg[1]: --comment
+Arg[2]: 02-kubernetes-vagrant_k8s-master_1777842021625_93610
+Arg[3]: --startvm
+Arg[4]: 8610bc9b-ea1b-45b3-bff3-50f008a3fc05
+Arg[5]: --vrde
+Arg[6]: config
+AddRef: illegal refcnt=3221225469 state=2

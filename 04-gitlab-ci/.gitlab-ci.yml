@@ -1,0 +1,96 @@
+stages:
+  - validate
+  - build
+  - scan
+  - push
+  - deploy
+  - rollback
+
+variables:
+  IMAGE_NAME: $CI_REGISTRY_IMAGE/devops-case-app
+  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+  K8S_NAMESPACE: case-study
+
+# ── 1. VALIDATE ──────────────────────────────────────────────────────────────
+validate_dockerfile:
+  stage: validate
+  image: hadolint/hadolint:latest-debian
+  script:
+    - hadolint Dockerfile
+
+# ── 2. BUILD (KANIKO) ─────────────────────────────────────────────────────────
+# DinD Privileged mod gerektirdiği için Kaniko tercih edildi (rootless build)
+build_image_kaniko:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:v1.14.0-debug
+    entrypoint: [""]
+  script:
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(printf "%s:%s" "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
+    - /kaniko/executor
+      --context "${CI_PROJECT_DIR}"
+      --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
+      --destination "${IMAGE_NAME}:${IMAGE_TAG}"
+      --cache=true
+      --cache-repo="${CI_REGISTRY_IMAGE}/cache"
+
+# ── 3. SCAN (TRIVY) ──────────────────────────────────────────────────────────
+# Shift-Left Security: imaj registry'ye gitmeden önce taranır
+security_scan:
+  stage: scan
+  image: aquasec/trivy:latest
+  script:
+    - trivy image
+      --severity HIGH,CRITICAL
+      --exit-code 1
+      --username $CI_REGISTRY_USER
+      --password $CI_REGISTRY_PASSWORD
+      ${IMAGE_NAME}:${IMAGE_TAG}
+
+# ── 4. PUSH (latest tag) ─────────────────────────────────────────────────────
+# Kaniko build sırasında SHA tag ile push etti; main branch ise latest de eklenir
+tag_latest_main:
+  stage: push
+  image:
+    name: gcr.io/go-containerregistry/crane:debug
+    entrypoint: [""]
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  script:
+    - crane auth login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - crane tag ${IMAGE_NAME}:${IMAGE_TAG} latest
+
+# ── 5. DEPLOY ─────────────────────────────────────────────────────────────────
+# Continuous Delivery: production'a çıkış manuel onay gerektirir (human-in-the-loop)
+deploy_production:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  environment:
+    name: production
+    url: http://192.168.56.10:80
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+  script:
+    - echo "$KUBECONFIG_PROD" | base64 -d > kubeconfig
+    - export KUBECONFIG=kubeconfig
+    # container adı deployment.yaml spec.containers[0].name ile eşleşmeli
+    - kubectl set image deployment/streamlit-app streamlit=${IMAGE_NAME}:${IMAGE_TAG} -n ${K8S_NAMESPACE}
+    - kubectl rollout status deployment/streamlit-app -n ${K8S_NAMESPACE} --timeout=5m
+
+# ── 6. ROLLBACK ───────────────────────────────────────────────────────────────
+# Disaster Recovery: sorun çıkarsa GitLab UI'dan tek tuşla önceki sürüme dön
+rollback_production:
+  stage: rollback
+  image: bitnami/kubectl:latest
+  environment:
+    name: production
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+  script:
+    - echo "$KUBECONFIG_PROD" | base64 -d > kubeconfig
+    - export KUBECONFIG=kubeconfig
+    - kubectl rollout undo deployment/streamlit-app -n ${K8S_NAMESPACE}
+    - kubectl rollout status deployment/streamlit-app -n ${K8S_NAMESPACE} --timeout=5m

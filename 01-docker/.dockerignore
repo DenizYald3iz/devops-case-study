@@ -1,0 +1,21 @@
+# .dockerignore
+# - .git dizini
+# - node_modules / __pycache__
+# - *.log, *.md
+# - .env dosyaları
+# - test/ ve docs/ dizinleri
+# - Dockerfile ve docker-compose.yml kendisi
+
+.git
+.gitignore
+__pycache__
+*.pyc
+.env
+.venv
+.vscode
+*.md
+tests/
+.idea
+Dockerfile
+.dockerignore
+docker-compose.yml

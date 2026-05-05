@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: streamlit-app
+  namespace: case-study
+  labels:
+    app: streamlit-app
+    version: v1
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0         # zero-downtime: yeni pod ayağa kalkmadan eskisi silinmez
+  selector:
+    matchLabels:
+      app: streamlit-app
+  template:
+    metadata:
+      labels:
+        app: streamlit-app
+        version: v1
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999    # appuser sistem UID (useradd -r ile otomatik atandı)
+        fsGroup: 999
+      containers:
+        - name: streamlit
+          image: streamlit-case-app:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8501
+          env:
+            - name: STREAMLIT_SERVER_PORT
+              value: "8501"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false   # streamlit /tmp'e yazıyor
+            capabilities:
+              drop: ["ALL"]

@@ -1,0 +1,12 @@
+Log created: 2026-05-03T21:23:16.261813000Z
+Process ID:  404210 (0x62af2)
+Parent PID:  2360 (0x938)
+Executable:  /usr/lib/virtualbox/VBoxHeadless
+Arg[0]: /usr/lib/virtualbox/VBoxHeadless
+Arg[1]: --comment
+Arg[2]: 02-kubernetes-vagrant_k8s-worker-1_1777842183057_44477
+Arg[3]: --startvm
+Arg[4]: f6b9ef0b-b5de-42d0-9982-5e8bf7aeff5b
+Arg[5]: --vrde
+Arg[6]: config
+AddRef: illegal refcnt=3221225469 state=2

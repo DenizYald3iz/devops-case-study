@@ -1,0 +1,142 @@
+{
+  "title": "Streamlit App — CPU & Memory",
+  "uid": "streamlit-app-001",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Container CPU Usage (%)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "rate(container_cpu_usage_seconds_total{name=\"streamlit-app\"}[5m]) * 100",
+          "legendFormat": "CPU %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 60 },
+              { "color": "red", "value": 80 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Container Memory Usage",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "container_memory_usage_bytes{name=\"streamlit-app\"}",
+          "legendFormat": "Memory"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "container_spec_memory_limit_bytes{name=\"streamlit-app\"}",
+          "legendFormat": "Limit"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "bytes" }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Host CPU Usage (%)",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+          "legendFormat": "CPU %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 85 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Host Memory Available",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 8 },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100",
+          "legendFormat": "Available %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 20 },
+              { "color": "green", "value": 40 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Container Restart Count",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "container_start_time_seconds{name=\"streamlit-app\"}",
+          "legendFormat": "Last Start"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "dateTimeAsIso" }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Host Disk Usage",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 8 },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "100 - ((node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"}) * 100)",
+          "legendFormat": "Disk %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percent" }
+      }
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+groups:
+  - name: streamlit-app
+    rules:
+
+      - alert: ContainerHighCPU
+        expr: |
+          rate(container_cpu_usage_seconds_total{name="streamlit-app"}[5m]) * 100 > 80
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container CPU kullanımı yüksek"
+          description: "streamlit-app CPU kullanımı {{ $value | printf \"%.1f\" }}% — 2 dakikadır >80%"
+
+      - alert: ContainerHighMemory
+        expr: |
+          container_memory_usage_bytes{name="streamlit-app"}
+          / container_spec_memory_limit_bytes{name="streamlit-app"} * 100 > 80
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container bellek kullanımı yüksek"
+          description: "streamlit-app bellek kullanımı {{ $value | printf \"%.1f\" }}% — limit aşımına yakın"
+
+      - alert: ContainerDown
+        expr: absent(container_last_seen{name="streamlit-app"})
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container çalışmıyor"
+          description: "streamlit-app container 1 dakikadır görünmüyor"
+
+      - alert: HostHighCPU
+        expr: |
+          100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host CPU kullanımı yüksek"
+          description: "Host CPU {{ $value | printf \"%.1f\" }}% — 5 dakikadır >85%"
+
+      - alert: HostLowMemory
+        expr: |
+          node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100 < 15
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Host bellek kritik seviyede"
+          description: "Kullanılabilir bellek {{ $value | printf \"%.1f\" }}% — kritik seviye"

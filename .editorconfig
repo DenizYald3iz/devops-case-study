@@ -1,0 +1,6 @@
+# .editorconfig
+# - root = true
+# - Genel kural: indent_style = space, indent_size = 2, end_of_line = lf, charset = utf-8, trim_trailing_whitespace = true, insert_final_newline = true
+# - Makefile için özel kural: indent_style = tab
+# - YAML dosyaları için: indent_size = 2
+# - Markdown dosyaları için: trim_trailing_whitespace = false

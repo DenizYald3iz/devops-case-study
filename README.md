@@ -8,7 +8,7 @@ containerization, Kubernetes cluster kurulumu, deployment, CI/CD pipeline ve mon
 ## 30 Saniyede Çalıştır
 
 ```bash
-git clone <[repo-url](https://github.com/DenizYald3iz/devops-case-study)> && cd devops-case-study
+git clone https://github.com/DenizYald3iz/devops-case-study && cd devops-case-study
 make up           # Streamlit uygulamasını başlat → http://localhost:8501
 make monitoring-up  # Prometheus + Grafana başlat → http://localhost:3000
 ```
